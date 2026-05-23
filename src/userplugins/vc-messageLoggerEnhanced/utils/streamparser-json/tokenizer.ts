@@ -208,7 +208,7 @@ export default class Tokenizer {
                 continue;
               }
             }
-          // eslint-disable-next-line no-fallthrough
+           
           case TokenizerStates.START:
             this.offset += 1;
 
@@ -401,7 +401,7 @@ export default class Tokenizer {
             this.state = TokenizerStates.STRING_DEFAULT;
             continue;
           case TokenizerStates.STRING_AFTER_BACKSLASH:
-            // eslint-disable-next-line no-case-declarations
+             
             const controlChar = escapedSequences[n];
             if (controlChar) {
               this.bufferedString.appendChar(controlChar);
@@ -568,7 +568,7 @@ export default class Tokenizer {
               this.state = TokenizerStates.NUMBER_AFTER_E_AND_SIGN;
               continue;
             }
-          // eslint-disable-next-line no-fallthrough
+           
           case TokenizerStates.NUMBER_AFTER_E_AND_SIGN:
             if (n >= charset.DIGIT_ZERO && n <= charset.DIGIT_NINE) {
               this.bufferedNumber.appendChar(n);
@@ -833,7 +833,7 @@ export default class Tokenizer {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   public onToken(parsedToken: ParsedTokenInfo): void {
     // Override me
     throw new TokenizerError(
