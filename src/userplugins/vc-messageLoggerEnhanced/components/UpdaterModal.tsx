@@ -16,9 +16,9 @@ import { Paragraph } from "@components/Paragraph";
 import { Margins } from "@utils/margins";
 import { classes } from "@utils/misc";
 import { openModal } from "@utils/modal";
+import { useAwaiter, useForceUpdater } from "@utils/react";
 import type { RenderModalProps } from "@vencord/discord-types";
 import { Modal } from "@webpack/common";
-import { useAwaiter, useForceUpdater } from "@utils/react";
 import { React, Toasts, useState } from "@webpack/common";
 
 import { GitError } from "../types";
