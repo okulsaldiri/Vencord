@@ -11,7 +11,6 @@ import definePlugin from "@utils/types";
 import { findByPropsLazy } from "@webpack";
 import {
     Button,
-    Forms,
     Menu,
     MessageStore,
     Modal,
