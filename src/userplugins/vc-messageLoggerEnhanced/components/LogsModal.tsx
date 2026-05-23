@@ -11,11 +11,12 @@ import { Flex } from "@components/Flex";
 import { InfoIcon } from "@components/Icons";
 import { Link } from "@components/Link";
 import { copyWithToast, openUserProfile } from "@utils/discord";
-import { closeAllModals, ModalContent, ModalFooter, ModalHeader, ModalProps, ModalRoot, ModalSize, openModal } from "@utils/modal";
+import { closeAllModals, openModal } from "@utils/modal";
+import type { RenderModalProps } from "@vencord/discord-types";
 import { LazyComponent } from "@utils/react";
 import type { User } from "@vencord/discord-types";
 import { find, findByCode, findByCodeLazy } from "@webpack";
-import { Alerts, ChannelStore, ContextMenuApi, FluxDispatcher, Menu, NavigationRouter, React, TabBar, TextInput, Tooltip, useMemo, useRef, useState } from "@webpack/common";
+import { Alerts, ChannelStore, ContextMenuApi, FluxDispatcher, Menu, Modal, NavigationRouter, React, TabBar, TextInput, Tooltip, useMemo, useRef, useState } from "@webpack/common";
 
 import { clearMessagesIDB, DBMessageRecord, deleteMessageIDB, deleteMessagesBulkIDB } from "../db";
 import { settings } from "../index";
@@ -65,7 +66,7 @@ export enum LogTabs {
 }
 
 interface Props {
-    modalProps: ModalProps;
+    modalProps: RenderModalProps;
     initalQuery?: string;
 }
 
@@ -79,47 +80,47 @@ export function LogsModal({ modalProps, initalQuery }: Props) {
     const { messages, total, statusTotal, pending, reset } = useMessages(queryEh, currentTab, sortNewest, numDisplayedMessages);
 
     return (
-        <ModalRoot className={cl("root")} {...modalProps} size={ModalSize.LARGE}>
-            <ModalHeader className={cl("header")}>
-                <TextInput value={queryEh} onChange={e => setQuery(e)} style={{ width: "100%" }} placeholder="Filter Messages" />
-                <TabBar
-                    type="top"
-                    look="brand"
-                    className={cl("tab-bar")}
-                    selectedItem={currentTab}
-                    onItemSelect={e => {
-                        setCurrentTab(e);
-                        setNumDisplayedMessages(settings.store.messagesToDisplayAtOnceInLogs);
-                        contentRef.current?.firstElementChild?.scrollTo(0, 0);
-                        // forceUpdate();
-                    }}
+        <Modal
+            {...modalProps}
+            size="lg"
+            title="Message Logs"
+        >
+            <TextInput value={queryEh} onChange={e => setQuery(e)} style={{ width: "100%" }} placeholder="Filter Messages" />
+            <TabBar
+                type="top"
+                look="brand"
+                className={cl("tab-bar")}
+                selectedItem={currentTab}
+                onItemSelect={e => {
+                    setCurrentTab(e);
+                    setNumDisplayedMessages(settings.store.messagesToDisplayAtOnceInLogs);
+                    contentRef.current?.firstElementChild?.scrollTo(0, 0);
+                    // forceUpdate();
+                }}
+            >
+                <TabBar.Item
+                    className={cl("tab-bar-item")}
+                    id={LogTabs.DELETED}
                 >
-                    <TabBar.Item
-                        className={cl("tab-bar-item")}
-                        id={LogTabs.DELETED}
-                    >
-                        Deleted
-                    </TabBar.Item>
-                    <TabBar.Item
-                        className={cl("tab-bar-item")}
-                        id={LogTabs.EDITED}
-                    >
-                        Edited
-                    </TabBar.Item>
-                    <TabBar.Item
-                        className={cl("tab-bar-item")}
-                        id={LogTabs.GHOST_PING}
-                    >
-                        Ghost Pinged
-                    </TabBar.Item>
-                </TabBar>
-            </ModalHeader>
+                    Deleted
+                </TabBar.Item>
+                <TabBar.Item
+                    className={cl("tab-bar-item")}
+                    id={LogTabs.EDITED}
+                >
+                    Edited
+                </TabBar.Item>
+                <TabBar.Item
+                    className={cl("tab-bar-item")}
+                    id={LogTabs.GHOST_PING}
+                >
+                    Ghost Pinged
+                </TabBar.Item>
+            </TabBar>
             <div style={{ opacity: modalProps.transitionState === 1 ? "1" : "0" }} className={cl("content-container")} ref={contentRef}>
                 {
                     modalProps.transitionState === 1 &&
-                    <ModalContent
-                        className={cl("content")}
-                    >
+                    <div className={cl("content")}>
                         {messages != null && total === 0 && (
                             <EmptyLogs
                                 hasQuery={queryEh.length !== 0}
@@ -137,10 +138,10 @@ export function LogsModal({ modalProps, initalQuery }: Props) {
                                 handleLoadMore={() => setNumDisplayedMessages(e => e + settings.store.messagesToDisplayAtOnceInLogs)}
                             />
                         )}
-                    </ModalContent>
+                    </div>
                 }
             </div>
-            <ModalFooter className={cl("footer")}>
+            <div className={cl("footer")}>
                 <Button
                     variant="dangerPrimary"
                     onClick={() => Alerts.show({
@@ -193,8 +194,8 @@ export function LogsModal({ modalProps, initalQuery }: Props) {
                 >
                     Sort {sortNewest ? "Oldest First" : "Newest First"}
                 </Link>
-            </ModalFooter>
-        </ModalRoot>
+            </div>
+        </Modal >
     );
 }
 

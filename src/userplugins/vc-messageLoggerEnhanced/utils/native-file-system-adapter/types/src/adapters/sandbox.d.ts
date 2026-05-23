@@ -1,4 +1,32 @@
 /* eslint-disable */
+
+declare interface FileEntry {
+    name: string;
+    toURL(): string;
+    file(callback: (file: File) => void, errorCallback?: (error: Error) => void): void;
+}
+
+declare interface DirectoryEntry {
+    name: string;
+    fullPath: string;
+    createReader(): any;
+    getDirectory(path: string, options: { create?: boolean; }, successCallback: (entry: DirectoryEntry) => void, errorCallback?: (error: Error) => void): void;
+    getFile(path: string, options: { create?: boolean; }, successCallback: (entry: FileEntry) => void, errorCallback?: (error: Error) => void): void;
+}
+
+declare interface FileWriter {
+    write(data: Blob | string): void;
+    truncate(length: number): void;
+    seek(offset: number): void;
+    position: number;
+    length: number;
+    onwritestart: ((event: ProgressEvent) => void) | null;
+    onwrite: ((event: ProgressEvent) => void) | null;
+    onwriteend: ((event: ProgressEvent) => void) | null;
+    onerror: ((event: ProgressEvent) => void) | null;
+    abort(): void;
+}
+
 export class FileHandle {
     constructor(file: FileEntry, writable?: boolean);
     file: FileEntry;

@@ -15,7 +15,9 @@ import { Link } from "@components/Link";
 import { Paragraph } from "@components/Paragraph";
 import { Margins } from "@utils/margins";
 import { classes } from "@utils/misc";
-import { ModalContent, ModalProps, ModalRoot, ModalSize, openModal } from "@utils/modal";
+import { openModal } from "@utils/modal";
+import type { RenderModalProps } from "@vencord/discord-types";
+import { Modal } from "@webpack/common";
 import { useAwaiter, useForceUpdater } from "@utils/react";
 import { React, Toasts, useState } from "@webpack/common";
 
@@ -51,7 +53,7 @@ export function UpdateErrorCard({ updateError, title }: { updateError: GitError;
 }
 
 const cl = classNameFactory("vc-updater-modal-");
-export function UpdaterModal({ modalProps }: { modalProps: ModalProps; }) {
+export function UpdaterModal({ modalProps }: { modalProps: RenderModalProps; }) {
     const forceUpdate = useForceUpdater();
     const [isUpdating, setIsUpdating] = useState(false);
 
@@ -81,8 +83,12 @@ export function UpdaterModal({ modalProps }: { modalProps: ModalProps; }) {
     }
 
     return (
-        <ModalRoot {...modalProps} size={ModalSize.LARGE}>
-            <ModalContent className={cl("content")}>
+        <Modal
+            {...modalProps}
+            size="lg"
+            title="Updater"
+        >
+            <div className={cl("content")}>
                 <Heading tag="h5">Repo</Heading>
                 {!repoPending && repoInfo != null && err == null && (
                     <>
@@ -141,8 +147,8 @@ export function UpdaterModal({ modalProps }: { modalProps: ModalProps; }) {
                     {isOutdated && <Button disabled={isUpdating} onClick={onUpdate}>Update</Button>}
                     <Button disabled={isUpdating} onClick={onCheck}>Check for updates</Button>
                 </Flex>
-            </ModalContent>
-        </ModalRoot>
+            </div>
+        </Modal >
     );
 }
 
