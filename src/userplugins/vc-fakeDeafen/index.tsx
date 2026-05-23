@@ -1,5 +1,11 @@
-import { Devs } from "@utils/constants";
+/*
+ * Vencord, a Discord client mod
+ * Copyright (c) 2026 Vendicated and contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
 import ErrorBoundary from "@components/ErrorBoundary";
+import { Devs } from "@utils/constants";
 import definePlugin from "@utils/types";
 import { findByProps, findComponentByCodeLazy } from "@webpack";
 
@@ -102,7 +108,7 @@ export default definePlugin({
         // default send function
         originalSend = socket.send;
 
-        // modify send function 
+        // modify send function
         socket.send = function (op: number, data: any, ...args: any[]) {
             // op code 4 = voiceStateUpdate don't ask me why
             if (op === 4 && enabled && data) {
