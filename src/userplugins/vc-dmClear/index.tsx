@@ -364,7 +364,6 @@ function DmClearModal(props: any & { channel: TargetChannel; }) {
                     setRunning(true);
                     setDeletedCount(savedOperation.deleted);
                     setProgress(savedOperation.progress);
-                    addLog(`Resumed operation: ${savedOperation.deleted}/${savedOperation.limit} deleted`);
                 } else if (savedOperation && !savedOperation.running) {
                     // Clear old completed operation state
                     set(OPERATION_KEY, null);
