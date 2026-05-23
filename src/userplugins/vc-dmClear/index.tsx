@@ -6,7 +6,7 @@
 
 import { addContextMenuPatch, removeContextMenuPatch } from "@api/ContextMenu";
 import { Devs } from "@utils/constants";
-import { Modals,openModal } from "@utils/modal";
+import { openModal } from "@utils/modal";
 import definePlugin from "@utils/types";
 import { findByPropsLazy } from "@webpack";
 import {
@@ -14,6 +14,7 @@ import {
     Forms,
     Menu,
     MessageStore,
+    Modal,
     React,
     TextInput,
     UserStore
@@ -123,7 +124,6 @@ function getChannel(args: any[]): TargetChannel | null {
 }
 
 function DmClearModal(props: any & { channel: TargetChannel; }) {
-    if (!Modals?.ModalRoot) return null;
 
     const { channel } = props;
     const me = UserStore.getCurrentUser();
@@ -230,14 +230,12 @@ function DmClearModal(props: any & { channel: TargetChannel; }) {
     }
 
     return (
-        <Modals.ModalRoot {...props}>
-            <Modals.ModalHeader>
-                <Forms.FormTitle tag="h2" style={{ color: "#00ff88" }}>
-                    Bulk Delete My Messages
-                </Forms.FormTitle>
-            </Modals.ModalHeader>
-
-            <Modals.ModalContent style={{ background: "#000", color: "#00ff88" }}>
+        <Modal
+            {...props}
+            size="dynamic"
+            title="Bulk Delete My Messages"
+        >
+            <div style={{ background: "#000", color: "#00ff88", padding: "16px" }}>
                 <TextInput
                     value={count}
                     onChange={setCount}
@@ -263,9 +261,9 @@ function DmClearModal(props: any & { channel: TargetChannel; }) {
                         fontFamily: "monospace"
                     }}
                 />
-            </Modals.ModalContent>
+            </div>
 
-            <Modals.ModalFooter style={{ background: "#000" }}>
+            <div style={{ background: "#000", padding: "16px", display: "flex", justifyContent: "flex-end", gap: "8px" }}>
                 <Button
                     disabled={!running}
                     onClick={stopDelete}
@@ -285,8 +283,8 @@ function DmClearModal(props: any & { channel: TargetChannel; }) {
                 <Button disabled={running} onClick={startDelete}>
                     Delete
                 </Button>
-            </Modals.ModalFooter>
-        </Modals.ModalRoot>
+            </div>
+        </Modal>
     );
 }
 
