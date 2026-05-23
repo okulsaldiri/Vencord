@@ -18,8 +18,7 @@ import { classes } from "@utils/misc";
 import { openModal } from "@utils/modal";
 import { useAwaiter, useForceUpdater } from "@utils/react";
 import type { RenderModalProps } from "@vencord/discord-types";
-import { Modal } from "@webpack/common";
-import { React, Toasts, useState } from "@webpack/common";
+import { Modal, React, Toasts, useState } from "@webpack/common";
 
 import { GitError } from "../types";
 import { changes, checkForUpdates, getRepoInfo, repoInfo as reInfo, update, updateError } from "../utils/updater";

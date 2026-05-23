@@ -13,8 +13,7 @@ import { Link } from "@components/Link";
 import { copyWithToast, openUserProfile } from "@utils/discord";
 import { closeAllModals, openModal } from "@utils/modal";
 import { LazyComponent } from "@utils/react";
-import type { RenderModalProps } from "@vencord/discord-types";
-import type { User } from "@vencord/discord-types";
+import type { RenderModalProps, User } from "@vencord/discord-types";
 import { find, findByCode, findByCodeLazy } from "@webpack";
 import { Alerts, ChannelStore, ContextMenuApi, FluxDispatcher, Menu, Modal, NavigationRouter, React, TabBar, TextInput, Tooltip, useMemo, useRef, useState } from "@webpack/common";
 
