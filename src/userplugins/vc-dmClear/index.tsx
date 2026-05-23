@@ -1,14 +1,14 @@
 /*
- * Vencord UserPlugin - DmClear (Filtered + 3s Delay + Notify)
+ * Vencord, a Discord client mod
+ * Copyright (c) 2026 Vendicated and contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 import { addContextMenuPatch, removeContextMenuPatch } from "@api/ContextMenu";
 import { Devs } from "@utils/constants";
+import { Modals,openModal } from "@utils/modal";
 import definePlugin from "@utils/types";
 import { findByPropsLazy } from "@webpack";
-import { openModal, Modals } from "@utils/modal";
-
 import {
     Button,
     Forms,
@@ -54,7 +54,7 @@ function notify(msg: string) {
         } else if (Toasts?.createToast && Toasts?.show) {
             Toasts.show(Toasts.createToast(text, 0));
         }
-    } catch {}
+    } catch { }
 }
 
 function getMessages(channelId: string): any[] {
@@ -122,7 +122,7 @@ function getChannel(args: any[]): TargetChannel | null {
     }
 }
 
-function DmClearModal(props: any & { channel: TargetChannel }) {
+function DmClearModal(props: any & { channel: TargetChannel; }) {
     if (!Modals?.ModalRoot) return null;
 
     const { channel } = props;
@@ -318,7 +318,7 @@ function patchMenu(children: any[], ...args: any[]) {
 export default definePlugin({
     name: "DmClear",
     description: "Bulk deletes your messages in DMs",
-    authors: [Devs.sikilmem],
+    authors: [Devs.sikilirim],
 
     start() {
         for (const id of MENU_IDS) {

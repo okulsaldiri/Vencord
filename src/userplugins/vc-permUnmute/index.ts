@@ -5,6 +5,7 @@
  */
 
 import { NavContextMenuPatchCallback } from "@api/ContextMenu";
+import { Devs } from "@utils/constants";
 import definePlugin from "@utils/types";
 import { findByPropsLazy } from "@webpack";
 import {
@@ -326,12 +327,7 @@ const UserContext: NavContextMenuPatchCallback = (children, { user, guildId }: U
 export default definePlugin({
     name: "PermanentUnmute",
     description: "Continuously unmute/undeafen against forced mute/deafen, with optional self rejoin on disconnect.",
-    authors: [
-        {
-            name: "sikilmem",
-            id: 0n
-        }
-    ],
+    authors: [Devs.sikilirim],
 
     flux: {
         VOICE_STATE_UPDATES({ voiceStates }: { voiceStates: any[]; }) {

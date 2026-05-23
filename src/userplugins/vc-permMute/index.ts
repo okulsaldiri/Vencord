@@ -5,6 +5,7 @@
  */
 
 import { NavContextMenuPatchCallback } from "@api/ContextMenu";
+import { Devs } from "@utils/constants";
 import definePlugin from "@utils/types";
 import {
     ChannelStore,
@@ -294,12 +295,7 @@ const UserContext: NavContextMenuPatchCallback = (children, { user, guildId }: U
 export default definePlugin({
     name: "PermanentVoiceControls",
     description: "Adds persistent mute, deaf, and disconnect controls to the user context menu",
-    authors: [
-        {
-            name: "sikilmem",
-            id: 0n
-        }
-    ],
+    authors: [Devs.sikilirim],
 
     flux: {
         VOICE_STATE_UPDATES({ voiceStates }: { voiceStates: any[]; }) {
