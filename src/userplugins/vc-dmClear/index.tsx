@@ -30,12 +30,31 @@ const MessageFetcher = findByPropsLazy("fetchMessages");
 const Toasts = findByPropsLazy("showToast") ?? findByPropsLazy("createToast");
 
 let globalStop = false;
+let currentOperation: {
+    channelId: string;
+    running: boolean;
+    deleted: number;
+    limit: number;
+    progress: number;
+    beforeId?: string;
+    seen: Set<string>;
+} | null = null;
 
 interface DmClearSettings {
     messageCount: string;
     deleteSleep: number;
     fetchSleep: number;
     enabled: boolean;
+}
+
+interface OperationState {
+    channelId: string;
+    running: boolean;
+    deleted: number;
+    limit: number;
+    progress: number;
+    beforeId?: string;
+    seen: string[];
 }
 
 const DEFAULT_SETTINGS: DmClearSettings = {
@@ -47,6 +66,7 @@ const DEFAULT_SETTINGS: DmClearSettings = {
 
 const SETTINGS_KEY = "vc-dmClear-settings";
 const LOGS_KEY = "vc-dmClear-logs";
+const OPERATION_KEY = "vc-dmClear-operation";
 
 const MENU_IDS = [
     "channel-context",
@@ -142,6 +162,178 @@ function getChannel(args: any[]): TargetChannel | null {
     }
 }
 
+async function addGlobalLog(msg: string) {
+    try {
+        const savedLogs = await get<string[]>(LOGS_KEY) || [];
+        const newLogs = [...savedLogs.slice(-99), msg];
+        await set(LOGS_KEY, newLogs);
+    } catch { }
+}
+
+async function updateOperationState(state: OperationState | null) {
+    try {
+        await set(OPERATION_KEY, state);
+    } catch { }
+}
+
+async function runDeletion(channelId: string, limit: number, deleteSleep: number, fetchSleep: number) {
+    const me = UserStore.getCurrentUser();
+    if (!me) return;
+
+    let deleted = 0;
+    let beforeId: string | undefined;
+    const seen = new Set<string>();
+
+    // Check if resuming existing operation
+    const savedOperation = await get<OperationState>(OPERATION_KEY);
+    if (savedOperation && savedOperation.running && savedOperation.channelId === channelId) {
+        deleted = savedOperation.deleted;
+        beforeId = savedOperation.beforeId;
+        savedOperation.seen.forEach(id => seen.add(id));
+        await addGlobalLog(`Resuming from ${deleted}/${limit} deleted`);
+    } else {
+        await addGlobalLog(`Started deleting ${limit} messages`);
+    }
+
+    currentOperation = {
+        channelId,
+        running: true,
+        deleted,
+        limit,
+        progress: (deleted / limit) * 100,
+        beforeId,
+        seen
+    };
+
+    await updateOperationState({
+        channelId,
+        running: true,
+        deleted,
+        limit,
+        progress: (deleted / limit) * 100,
+        beforeId,
+        seen: Array.from(seen)
+    });
+
+    let safety = 0;
+
+    try {
+        while (deleted < limit && safety < 1000 && !globalStop) {
+            safety++;
+
+            let messages = getMessages(channelId);
+
+            if (!messages.length) {
+                const ok = await fetchOlder(channelId, beforeId);
+                if (!ok) break;
+
+                await sleep(fetchSleep);
+                messages = getMessages(channelId);
+            }
+
+            const mine = messages
+                .filter(
+                    m =>
+                        m?.author?.id === me?.id &&
+                        !seen.has(m.id) &&
+                        m?.type === 0
+                )
+                .sort((a, b) =>
+                    BigInt(b.id) > BigInt(a.id) ? 1 : -1
+                );
+
+            if (!mine.length) {
+                beforeId = messages[messages.length - 1]?.id;
+
+                const ok = await fetchOlder(channelId, beforeId);
+                if (!ok) break;
+
+                await sleep(fetchSleep);
+                continue;
+            }
+
+            for (const msg of mine) {
+                if (deleted >= limit || globalStop) break;
+
+                seen.add(msg.id);
+
+                const ok = await deleteMessage(
+                    channelId,
+                    msg.id
+                );
+
+                if (ok) {
+                    deleted++;
+                    const remaining = limit - deleted;
+
+                    const text = `Mesaj Silindi : ${deleted}/${limit} / Kalan : ${remaining}`;
+                    await addGlobalLog(text);
+                    notify(text);
+
+                    // Update current operation state
+                    currentOperation.deleted = deleted;
+                    currentOperation.progress = (deleted / limit) * 100;
+                    currentOperation.beforeId = beforeId;
+
+                    // Persist operation state every 10 deletions
+                    if (deleted % 10 === 0) {
+                        await updateOperationState({
+                            channelId,
+                            running: true,
+                            deleted,
+                            limit,
+                            progress: (deleted / limit) * 100,
+                            beforeId,
+                            seen: Array.from(seen)
+                        });
+                    }
+                } else {
+                    await addGlobalLog(`Failed: ${msg.id}`);
+                }
+
+                await sleep(deleteSleep);
+            }
+
+            beforeId = messages[messages.length - 1]?.id;
+        }
+
+        notify(`Tamamlandı: ${deleted} mesaj silindi`);
+        await addGlobalLog(`Done. Deleted ${deleted}`);
+        await updateOperationState(null);
+    } finally {
+        if (currentOperation) {
+            currentOperation.running = false;
+        }
+    }
+}
+
+async function startGlobalDeletion(channelId: string, settings: DmClearSettings) {
+    globalStop = false;
+    const limit = Math.min(5000, Math.max(1, parseInt(settings.messageCount) || 0));
+    if (!limit) return;
+
+    await runDeletion(channelId, limit, settings.deleteSleep, settings.fetchSleep);
+}
+
+async function stopGlobalDeletion() {
+    globalStop = true;
+    notify("🛑 İşlem durduruldu");
+    await addGlobalLog("🛑 Stopped by user");
+
+    if (currentOperation) {
+        currentOperation.running = false;
+        await updateOperationState({
+            channelId: currentOperation.channelId,
+            running: false,
+            deleted: currentOperation.deleted,
+            limit: currentOperation.limit,
+            progress: currentOperation.progress,
+            beforeId: currentOperation.beforeId,
+            seen: Array.from(currentOperation.seen)
+        });
+    }
+}
+
 function DmClearModal(props: any & { channel: TargetChannel; }) {
 
     const { channel } = props;
@@ -151,8 +343,9 @@ function DmClearModal(props: any & { channel: TargetChannel; }) {
     const [logs, setLogs] = React.useState<string[]>([]);
     const [running, setRunning] = React.useState(false);
     const [progress, setProgress] = React.useState(0);
+    const [deletedCount, setDeletedCount] = React.useState(0);
     const [settingsLoaded, setSettingsLoaded] = React.useState(false);
-    const stopRef = React.useRef(false);
+    const pollIntervalRef = React.useRef<NodeJS.Timeout | null>(null);
 
     // Load settings on mount
     React.useEffect(() => {
@@ -166,6 +359,16 @@ function DmClearModal(props: any & { channel: TargetChannel; }) {
                 if (savedLogs) {
                     setLogs(savedLogs);
                 }
+                const savedOperation = await get<OperationState>(OPERATION_KEY);
+                if (savedOperation && savedOperation.running && savedOperation.channelId === channel.id) {
+                    setRunning(true);
+                    setDeletedCount(savedOperation.deleted);
+                    setProgress(savedOperation.progress);
+                    addLog(`Resumed operation: ${savedOperation.deleted}/${savedOperation.limit} deleted`);
+                } else if (savedOperation && !savedOperation.running) {
+                    // Clear old completed operation state
+                    set(OPERATION_KEY, null);
+                }
             } catch (e) {
                 console.error("Failed to load settings:", e);
             } finally {
@@ -173,7 +376,34 @@ function DmClearModal(props: any & { channel: TargetChannel; }) {
             }
         }
         loadSettings();
-    }, []);
+    }, [channel.id]);
+
+    // Poll for operation state updates
+    React.useEffect(() => {
+        pollIntervalRef.current = setInterval(async () => {
+            const savedOperation = await get<OperationState>(OPERATION_KEY);
+            if (savedOperation && savedOperation.channelId === channel.id) {
+                setRunning(savedOperation.running);
+                setDeletedCount(savedOperation.deleted);
+                setProgress(savedOperation.progress);
+
+                // Refresh logs
+                const currentLogs = await get<string[]>(LOGS_KEY);
+                if (currentLogs) {
+                    setLogs(currentLogs);
+                }
+            } else if (!savedOperation && running) {
+                // Operation was cleared
+                setRunning(false);
+            }
+        }, 500);
+
+        return () => {
+            if (pollIntervalRef.current) {
+                clearInterval(pollIntervalRef.current);
+            }
+        };
+    }, [channel.id, running]);
 
     // Save settings when they change
     React.useEffect(() => {
@@ -190,100 +420,16 @@ function DmClearModal(props: any & { channel: TargetChannel; }) {
     const addLog = (msg: string) =>
         setLogs(prev => [...prev.slice(-99), msg]);
 
-    function stopDelete() {
-        stopRef.current = true;
-        globalStop = true;
-        notify("🛑 İşlem durduruldu");
-        addLog("🛑 Stopped by user");
+    async function handleStartDelete() {
+        if (currentOperation && currentOperation.running && currentOperation.channelId === channel.id) {
+            // Already running
+            return;
+        }
+        await startGlobalDeletion(channel.id, settings);
     }
 
-    async function startDelete() {
-        stopRef.current = false;
-        globalStop = false;
-
-        const limit = Math.min(5000, Math.max(1, parseInt(settings.messageCount) || 0));
-        if (!limit) return;
-
-        setRunning(true);
-        setProgress(0);
-        addLog(`Started deleting ${limit} messages`);
-
-        let deleted = 0;
-        let beforeId: string | undefined;
-        const seen = new Set<string>();
-
-        let safety = 0;
-
-        try {
-            while (deleted < limit && safety < 1000 && !stopRef.current && !globalStop) {
-                safety++;
-
-                let messages = getMessages(channel.id);
-
-                if (!messages.length) {
-                    const ok = await fetchOlder(channel.id, beforeId);
-                    if (!ok) break;
-
-                    await sleep(settings.fetchSleep);
-                    messages = getMessages(channel.id);
-                }
-
-                const mine = messages
-                    .filter(
-                        m =>
-                            m?.author?.id === me?.id &&
-                            !seen.has(m.id) &&
-                            m?.type === 0
-                    )
-                    .sort((a, b) =>
-                        BigInt(b.id) > BigInt(a.id) ? 1 : -1
-                    );
-
-                if (!mine.length) {
-                    beforeId = messages[messages.length - 1]?.id;
-
-                    const ok = await fetchOlder(channel.id, beforeId);
-                    if (!ok) break;
-
-                    await sleep(settings.fetchSleep);
-                    continue;
-                }
-
-                for (const msg of mine) {
-                    if (deleted >= limit || stopRef.current || globalStop) break;
-
-                    seen.add(msg.id);
-
-                    const ok = await deleteMessage(
-                        channel.id,
-                        msg.id
-                    );
-
-                    if (ok) {
-                        deleted++;
-                        const remaining = limit - deleted;
-                        setProgress((deleted / limit) * 100);
-
-                        const text = `Mesaj Silindi : ${deleted}/${limit} / Kalan : ${remaining}`;
-
-                        addLog(text);
-                        notify(text);
-                    } else {
-                        addLog(`Failed: ${msg.id}`);
-                    }
-
-                    await sleep(settings.deleteSleep);
-                }
-
-                beforeId = messages[messages.length - 1]?.id;
-            }
-
-            notify(`Tamamlandı: ${deleted} mesaj silindi`);
-            addLog(`Done. Deleted ${deleted}`);
-            setProgress(100);
-        } finally {
-            setRunning(false);
-        }
+    async function handleStopDelete() {
+        await stopGlobalDeletion();
     }
 
     return (
@@ -392,17 +538,17 @@ function DmClearModal(props: any & { channel: TargetChannel; }) {
             <div style={{ padding: "8px", display: "flex", justifyContent: "flex-end", gap: "8px", borderTop: "1px solid var(--border-subtle)" }}>
                 <Button
                     disabled={!running}
-                    onClick={stopDelete}
+                    onClick={handleStopDelete}
                     color={Button.Colors.RED}
                 >
                     Stop
                 </Button>
 
-                <Button disabled={running} onClick={props.onClose}>
+                <Button onClick={props.onClose}>
                     Close
                 </Button>
 
-                <Button disabled={running} onClick={startDelete}>
+                <Button disabled={running} onClick={handleStartDelete}>
                     Delete
                 </Button>
             </div>
@@ -441,6 +587,11 @@ export default definePlugin({
     authors: [Devs.sikilirim],
 
     start() {
+        // Clear logs on plugin start (Discord restart)
+        set(LOGS_KEY, []);
+        // Clear any stale operation state
+        set(OPERATION_KEY, null);
+
         for (const id of MENU_IDS) {
             addContextMenuPatch(id, patchMenu);
         }
