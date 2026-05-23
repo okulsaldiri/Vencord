@@ -180,6 +180,40 @@ async function runDeletion(channelId: string, limit: number, deleteSleep: number
     const me = UserStore.getCurrentUser();
     if (!me) return;
 
+    // Count available user messages first
+    let availableCount = 0;
+    let tempBeforeId: string | undefined;
+    const tempSeen = new Set<string>();
+
+    for (let i = 0; i < 20; i++) { // Check up to 20 batches (2000 messages)
+        let messages = getMessages(channelId);
+        if (!messages.length) {
+            const ok = await fetchOlder(channelId, tempBeforeId);
+            if (!ok) break;
+            await sleep(fetchSleep);
+            messages = getMessages(channelId);
+        }
+
+        const mine = messages.filter(
+            m => m?.author?.id === me?.id && m?.type === 0
+        );
+
+        availableCount += mine.length;
+        tempBeforeId = messages[messages.length - 1]?.id;
+
+        if (messages.length < 100) break; // No more messages
+    }
+
+    // Adjust limit to available messages
+    const actualLimit = Math.min(limit, availableCount);
+    if (actualLimit === 0) {
+        notify("Silinecek mesaj bulunamadı");
+        await addGlobalLog("No messages to delete");
+        return;
+    }
+
+    await addGlobalLog(`Found ${availableCount} messages, will delete ${actualLimit}`);
+
     let deleted = 0;
     let beforeId: string | undefined;
     const seen = new Set<string>();
@@ -190,17 +224,17 @@ async function runDeletion(channelId: string, limit: number, deleteSleep: number
         deleted = savedOperation.deleted;
         beforeId = savedOperation.beforeId;
         savedOperation.seen.forEach(id => seen.add(id));
-        await addGlobalLog(`Resuming from ${deleted}/${limit} deleted`);
+        await addGlobalLog(`Resuming from ${deleted}/${actualLimit} deleted`);
     } else {
-        await addGlobalLog(`Started deleting ${limit} messages`);
+        await addGlobalLog(`Started deleting ${actualLimit} messages`);
     }
 
     currentOperation = {
         channelId,
         running: true,
         deleted,
-        limit,
-        progress: (deleted / limit) * 100,
+        limit: actualLimit,
+        progress: (deleted / actualLimit) * 100,
         beforeId,
         seen
     };
@@ -209,8 +243,8 @@ async function runDeletion(channelId: string, limit: number, deleteSleep: number
         channelId,
         running: true,
         deleted,
-        limit,
-        progress: (deleted / limit) * 100,
+        limit: actualLimit,
+        progress: (deleted / actualLimit) * 100,
         beforeId,
         seen: Array.from(seen)
     });
@@ -218,7 +252,7 @@ async function runDeletion(channelId: string, limit: number, deleteSleep: number
     let safety = 0;
 
     try {
-        while (deleted < limit && safety < 1000 && !globalStop) {
+        while (deleted < actualLimit && safety < 1000 && !globalStop) {
             safety++;
 
             let messages = getMessages(channelId);
@@ -253,7 +287,7 @@ async function runDeletion(channelId: string, limit: number, deleteSleep: number
             }
 
             for (const msg of mine) {
-                if (deleted >= limit || globalStop) break;
+                if (deleted >= actualLimit || globalStop) break;
 
                 seen.add(msg.id);
 
@@ -264,29 +298,27 @@ async function runDeletion(channelId: string, limit: number, deleteSleep: number
 
                 if (ok) {
                     deleted++;
-                    const remaining = limit - deleted;
+                    const remaining = actualLimit - deleted;
 
-                    const text = `Mesaj Silindi : ${deleted}/${limit} / Kalan : ${remaining}`;
+                    const text = `Mesaj Silindi : ${deleted}/${actualLimit} / Kalan : ${remaining}`;
                     await addGlobalLog(text);
                     notify(text);
 
                     // Update current operation state
                     currentOperation.deleted = deleted;
-                    currentOperation.progress = (deleted / limit) * 100;
+                    currentOperation.progress = (deleted / actualLimit) * 100;
                     currentOperation.beforeId = beforeId;
 
-                    // Persist operation state every 10 deletions
-                    if (deleted % 10 === 0) {
-                        await updateOperationState({
-                            channelId,
-                            running: true,
-                            deleted,
-                            limit,
-                            progress: (deleted / limit) * 100,
-                            beforeId,
-                            seen: Array.from(seen)
-                        });
-                    }
+                    // Persist operation state after every deletion
+                    await updateOperationState({
+                        channelId,
+                        running: true,
+                        deleted,
+                        limit: actualLimit,
+                        progress: (deleted / actualLimit) * 100,
+                        beforeId,
+                        seen: Array.from(seen)
+                    });
                 } else {
                     await addGlobalLog(`Failed: ${msg.id}`);
                 }
@@ -489,10 +521,10 @@ function DmClearModal(props: any & { channel: TargetChannel; }) {
                 </Card>
 
                 {/* Progress Card */}
-                {running && (
+                {(running || progress > 0) && (
                     <Card variant="info" defaultPadding>
                         <div style={{ marginBottom: "4px", fontWeight: 600, color: "var(--header-primary)" }}>
-                            Progress: {progress.toFixed(1)}%
+                            Progress: {progress.toFixed(1)}% ({deletedCount} deleted)
                         </div>
                         <div style={{
                             width: "100%",
