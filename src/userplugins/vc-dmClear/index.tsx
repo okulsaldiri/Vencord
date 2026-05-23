@@ -5,6 +5,8 @@
  */
 
 import { addContextMenuPatch, removeContextMenuPatch } from "@api/ContextMenu";
+import { get, set } from "@api/DataStore";
+import { Card } from "@components/Card";
 import { Devs } from "@utils/constants";
 import { openModal } from "@utils/modal";
 import definePlugin from "@utils/types";
@@ -15,6 +17,8 @@ import {
     MessageStore,
     Modal,
     React,
+    Slider,
+    Switch,
     TextInput,
     UserStore
 } from "@webpack/common";
@@ -27,6 +31,23 @@ const MessageFetcher = findByPropsLazy("fetchMessages");
 const Toasts = findByPropsLazy("showToast") ?? findByPropsLazy("createToast");
 
 let globalStop = false;
+
+interface DmClearSettings {
+    messageCount: string;
+    deleteSleep: number;
+    fetchSleep: number;
+    enabled: boolean;
+}
+
+const DEFAULT_SETTINGS: DmClearSettings = {
+    messageCount: "50",
+    deleteSleep: 500,
+    fetchSleep: 400,
+    enabled: true
+};
+
+const SETTINGS_KEY = "vc-dmClear-settings";
+const LOGS_KEY = "vc-dmClear-logs";
 
 const MENU_IDS = [
     "channel-context",
@@ -127,13 +148,48 @@ function DmClearModal(props: any & { channel: TargetChannel; }) {
     const { channel } = props;
     const me = UserStore.getCurrentUser();
 
-    const [count, setCount] = React.useState("50");
+    const [settings, setSettings] = React.useState<DmClearSettings>(DEFAULT_SETTINGS);
     const [logs, setLogs] = React.useState<string[]>([]);
     const [running, setRunning] = React.useState(false);
+    const [progress, setProgress] = React.useState(0);
+    const [settingsLoaded, setSettingsLoaded] = React.useState(false);
     const stopRef = React.useRef(false);
 
+    // Load settings on mount
+    React.useEffect(() => {
+        async function loadSettings() {
+            try {
+                const saved = await get<DmClearSettings>(SETTINGS_KEY);
+                if (saved) {
+                    setSettings(saved);
+                }
+                const savedLogs = await get<string[]>(LOGS_KEY);
+                if (savedLogs) {
+                    setLogs(savedLogs);
+                }
+            } catch (e) {
+                console.error("Failed to load settings:", e);
+            } finally {
+                setSettingsLoaded(true);
+            }
+        }
+        loadSettings();
+    }, []);
+
+    // Save settings when they change
+    React.useEffect(() => {
+        set(SETTINGS_KEY, settings);
+    }, [settings]);
+
+    // Save logs when they change
+    React.useEffect(() => {
+        if (logs.length > 0) {
+            set(LOGS_KEY, logs.slice(-100)); // Keep last 100 logs
+        }
+    }, [logs]);
+
     const addLog = (msg: string) =>
-        setLogs(prev => [...prev, msg]);
+        setLogs(prev => [...prev.slice(-99), msg]);
 
     function stopDelete() {
         stopRef.current = true;
@@ -146,10 +202,11 @@ function DmClearModal(props: any & { channel: TargetChannel; }) {
         stopRef.current = false;
         globalStop = false;
 
-        const limit = Math.min(5000, Math.max(1, parseInt(count) || 0));
+        const limit = Math.min(5000, Math.max(1, parseInt(settings.messageCount) || 0));
         if (!limit) return;
 
         setRunning(true);
+        setProgress(0);
         addLog(`Started deleting ${limit} messages`);
 
         let deleted = 0;
@@ -168,7 +225,7 @@ function DmClearModal(props: any & { channel: TargetChannel; }) {
                     const ok = await fetchOlder(channel.id, beforeId);
                     if (!ok) break;
 
-                    await sleep(900);
+                    await sleep(settings.fetchSleep);
                     messages = getMessages(channel.id);
                 }
 
@@ -177,7 +234,7 @@ function DmClearModal(props: any & { channel: TargetChannel; }) {
                         m =>
                             m?.author?.id === me?.id &&
                             !seen.has(m.id) &&
-                            m?.type === 0 // 🔥 SADECE NORMAL MESAJLAR
+                            m?.type === 0
                     )
                     .sort((a, b) =>
                         BigInt(b.id) > BigInt(a.id) ? 1 : -1
@@ -189,7 +246,7 @@ function DmClearModal(props: any & { channel: TargetChannel; }) {
                     const ok = await fetchOlder(channel.id, beforeId);
                     if (!ok) break;
 
-                    await sleep(400);
+                    await sleep(settings.fetchSleep);
                     continue;
                 }
 
@@ -206,6 +263,7 @@ function DmClearModal(props: any & { channel: TargetChannel; }) {
                     if (ok) {
                         deleted++;
                         const remaining = limit - deleted;
+                        setProgress((deleted / limit) * 100);
 
                         const text = `Mesaj Silindi : ${deleted}/${limit} / Kalan : ${remaining}`;
 
@@ -215,7 +273,7 @@ function DmClearModal(props: any & { channel: TargetChannel; }) {
                         addLog(`Failed: ${msg.id}`);
                     }
 
-                    await sleep(500); // 🔥 3 SANİYE
+                    await sleep(settings.deleteSleep);
                 }
 
                 beforeId = messages[messages.length - 1]?.id;
@@ -223,6 +281,7 @@ function DmClearModal(props: any & { channel: TargetChannel; }) {
 
             notify(`Tamamlandı: ${deleted} mesaj silindi`);
             addLog(`Done. Deleted ${deleted}`);
+            setProgress(100);
         } finally {
             setRunning(false);
         }
@@ -231,46 +290,111 @@ function DmClearModal(props: any & { channel: TargetChannel; }) {
     return (
         <Modal
             {...props}
-            size="dynamic"
             title="Bulk Delete My Messages"
         >
-            <div style={{ background: "#000", color: "#00ff88", padding: "16px" }}>
-                <TextInput
-                    value={count}
-                    onChange={setCount}
-                    disabled={running}
-                    placeholder="50"
-                    style={{
-                        background: "#000",
-                        color: "#00ff88",
-                        border: "1px solid #00ff88"
-                    }}
-                />
+            <div style={{ width: "400px", padding: "8px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                {/* Settings Card */}
+                <Card variant="normal" defaultPadding>
+                    <div style={{ marginBottom: "8px" }}>
+                        <label style={{ display: "block", marginBottom: "4px", fontWeight: 600, color: "var(--header-primary)" }}>
+                            Message Count
+                        </label>
+                        <TextInput
+                            value={settings.messageCount}
+                            onChange={v => setSettings(s => ({ ...s, messageCount: v }))}
+                            disabled={running}
+                            placeholder="50"
+                        />
+                    </div>
 
-                <textarea
-                    readOnly
-                    value={logs.join("\n")}
-                    style={{
-                        width: "100%",
-                        height: 300,
-                        marginTop: 12,
-                        background: "#000",
-                        color: "#00ff88",
-                        border: "1px solid #00ff88",
-                        fontFamily: "monospace"
-                    }}
-                />
+                    {settingsLoaded && (
+                        <>
+                            <div style={{ marginBottom: "8px" }}>
+                                <label style={{ display: "block", marginBottom: "4px", fontWeight: 600, color: "var(--header-primary)" }}>
+                                    Delete Sleep (ms): {Math.round(settings.deleteSleep)}ms
+                                </label>
+                                <Slider
+                                    initialValue={Math.round(settings.deleteSleep)}
+                                    minValue={100}
+                                    maxValue={3000}
+                                    markers={[100, 500, 1000, 1500, 2000, 2500, 3000]}
+                                    onValueChange={v => setSettings(s => ({ ...s, deleteSleep: Math.round(v) }))}
+                                    onValueRender={v => `${Math.round(v)}ms`}
+                                    disabled={running}
+                                    stickToMarkers={false}
+                                />
+                            </div>
+
+                            <div style={{ marginBottom: "4px" }}>
+                                <label style={{ display: "block", marginBottom: "4px", fontWeight: 600, color: "var(--header-primary)" }}>
+                                    Fetch Sleep (ms): {Math.round(settings.fetchSleep)}ms
+                                </label>
+                                <Slider
+                                    initialValue={Math.round(settings.fetchSleep)}
+                                    minValue={100}
+                                    maxValue={2000}
+                                    markers={[100, 400, 800, 1200, 1600, 2000]}
+                                    onValueChange={v => setSettings(s => ({ ...s, fetchSleep: Math.round(v) }))}
+                                    onValueRender={v => `${Math.round(v)}ms`}
+                                    disabled={running}
+                                    stickToMarkers={false}
+                                />
+                            </div>
+                        </>
+                    )}
+                </Card>
+
+                {/* Progress Card */}
+                {running && (
+                    <Card variant="info" defaultPadding>
+                        <div style={{ marginBottom: "4px", fontWeight: 600, color: "var(--header-primary)" }}>
+                            Progress: {progress.toFixed(1)}%
+                        </div>
+                        <div style={{
+                            width: "100%",
+                            height: "6px",
+                            background: "var(--background-modifier-selected)",
+                            borderRadius: "4px",
+                            overflow: "hidden"
+                        }}>
+                            <div style={{
+                                width: `${progress}%`,
+                                height: "100%",
+                                background: "var(--brand-experiment)",
+                                transition: "width 0.3s ease"
+                            }} />
+                        </div>
+                    </Card>
+                )}
+
+                {/* Logs Card */}
+                <Card variant="normal" defaultPadding>
+                    <label style={{ display: "block", marginBottom: "4px", fontWeight: 600, color: "var(--header-primary)" }}>
+                        Activity Log
+                    </label>
+                    <textarea
+                        readOnly
+                        value={logs.join("\n")}
+                        style={{
+                            width: "100%",
+                            height: 80,
+                            background: "var(--background-secondary)",
+                            color: "var(--text-normal)",
+                            border: "1px solid var(--border-subtle)",
+                            borderRadius: "4px",
+                            fontFamily: "monospace",
+                            fontSize: "11px",
+                            padding: "6px"
+                        }}
+                    />
+                </Card>
             </div>
 
-            <div style={{ background: "#000", padding: "16px", display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+            <div style={{ padding: "8px", display: "flex", justifyContent: "flex-end", gap: "8px", borderTop: "1px solid var(--border-subtle)" }}>
                 <Button
                     disabled={!running}
                     onClick={stopDelete}
-                    style={{
-                        background: "#111",
-                        color: "#00ff88",
-                        border: "1px solid #00ff88"
-                    }}
+                    color={Button.Colors.RED}
                 >
                     Stop
                 </Button>
