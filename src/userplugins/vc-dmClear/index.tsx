@@ -18,7 +18,6 @@ import {
     Modal,
     React,
     Slider,
-    Switch,
     TextInput,
     UserStore
 } from "@webpack/common";
